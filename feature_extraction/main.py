@@ -10,6 +10,8 @@ import json
 
 import sys
 
+from sklearn.preprocessing import StandardScaler
+
 module_path = os.path.abspath(os.path.join('..'))
 if module_path not in sys.path:
     sys.path.append(module_path)
@@ -289,7 +291,7 @@ if __name__ == '__main__':
     channel_names = {'corrugator': 0, 'zygomaticus': 1, 'trapezius': 2, 'scl': 3, 'ecg': 4}
 
     # for testing purpose only
-    # subjects_file_list = list(filter(lambda x: '042' in x.name, usable_files))
+    # subjects_file_list = list(filter(lambda x: '042' in x.name or '043' in x.name , usable_files))
 
     subjects_file_list = usable_files
     subjects_file_list.sort(key=lambda x: int(x.name.split('.')[0].split('S')[1]))
@@ -498,6 +500,15 @@ if __name__ == '__main__':
 
     cols = ["subj_id"] + feature_names + ["label"]
     df = pd.DataFrame(data_set_real, columns=cols)
+
+    # subject specific standardization (z-score: zero mean with unit variance)
+    unique_ids = np.unique(df.iloc[:, 0].values)
+    mod_feature_vec = []
+    for s_id in unique_ids:
+        scaler = StandardScaler()
+        idx = np.where(df['subj_id'] == s_id)[0]
+        vals = df.iloc[idx, 1:-1].to_numpy()
+        tmp_res = scaler.fit_transform(vals)
+        df.iloc[idx, 1:-1] = tmp_res
+
     df.to_csv(path_data_set)
-
-
