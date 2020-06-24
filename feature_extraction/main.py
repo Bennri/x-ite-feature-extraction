@@ -14,6 +14,7 @@ module_path = os.path.abspath(os.path.join('..'))
 if module_path not in sys.path:
     sys.path.append(module_path)
 
+from feature_extraction.SequenceTupleException import SequenceTupleException
 from feature_extraction.create_feature_names import create_feature_names_as_list
 from feature_extraction.feature_extraction_functions import signal_tga, signal_max, signal_range, signal_iqr, \
     signal_std, signal_idr, signal_mean, signal_mad, signal_tmax, signal_median, \
@@ -228,6 +229,19 @@ def process_slice(seq_tuple,
     return current_features
 
 
+def split_tonic_sequence(slice_tup, split_length):
+    subj_id, start_idx, data_slice, slice_label = slice_tup
+    slice_tup_list = []
+
+    # number of splits
+    s = int(data_slice.shape[0] / split_length)
+    for split_idx in range(0, s):
+        phasic_slice = np.copy(data_slice[split_idx * split_length: split_idx * split_length + split_length, :])
+        # collect splits
+        slice_tup_list.append((subj_id, start_idx + (split_idx * split_length), phasic_slice, slice_label))
+    return slice_tup_list
+
+
 # do not use subjects according to Werner et al. "Twofold-Multimodal Pain Recognition with the X-ITE Pain Database"
 do_not_use = ["S001.mat", "S014.mat", "S023.mat", "S024.mat", "S025.mat", "S030.mat", "S059.mat", "S121.mat"]
 # no electro stimuli present
@@ -251,6 +265,11 @@ if __name__ == '__main__':
     # used for offset parameter in compute_start_indices
     shift_phasic_heat = 2000
     shift_phasic_electro = 0
+
+    tonic_split_sequence = True
+    tonic_split_heat_length = 4000  # resulting in 15 phasic heat sequences of length 4 s
+    tonic_split_electro_length = 5000  # resulting in 12 phasic electric sequences of length 5 s
+
     # used for offset window after applied stimulus
     ext_heat = 500
     ext_electro = 0
@@ -274,12 +293,15 @@ if __name__ == '__main__':
     phasic_stimuli_labels = [-3, -2, -1, 1, 2, 3]
     phasic_heat_stimuli_labels = [1, 2, 3]
     tonic_stimuli_labels = [-6, -5, -4, 4, 5, 6]
+    tonic_heat_stimuli_labels = [4, 5, 6]
+    tonic_electro_stimuli_labels = [-4, -5, -6]
     baseline_label = 0
 
     extract_b_after_tonic_heat = 4
     extract_b_after_tonic_electro = -4
     extract_b_after_phasic_heat = 1
     extract_b_after_phasic_electro = -1
+
 
     if not os.path.exists(path_to_store_dataset):
         os.makedirs(path_to_store_dataset)
@@ -359,6 +381,18 @@ if __name__ == '__main__':
                                                  current_label, extension=0, tonic_length=tonic_length_tolerance,
                                                  phasic_length=phasic_length_tolerance, phasic=False, heat_phasic=False,
                                                  correction=0, shift=0)
+                if tonic_split_sequence:
+                    # call function to split data
+                    if slice_tup[3] in tonic_electro_stimuli_labels:
+                        slice_tup = split_tonic_sequence(slice_tup, tonic_split_electro_length)
+                    elif slice_tup[3] in tonic_heat_stimuli_labels:
+                        slice_tup = split_tonic_sequence(slice_tup, tonic_split_heat_length)
+                    else:
+                        raise SequenceTupleException('Label of sequence unknown, split not possible. '
+                                                     'Label {} is not part of tonic electro (labels: {}) nor '
+                                                     'tonic heat (labels: {}) '
+                                                     'stimuli.'.format(slice_tup[3], tonic_electro_stimuli_labels,
+                                                                       tonic_heat_stimuli_labels))
 
             # only baseline is left
             else:
@@ -369,6 +403,8 @@ if __name__ == '__main__':
                     current_shift = 0
                     current_ext = 0
                     current_correction = 0
+                    tonic_split = False
+                    current_baseline_split_length = 0
                     prev_label = subject_labels_edited[stimuli_start_indices[i - 1]]
                     print('Prev label baseline: {}'.format(prev_label))
                     if prev_label == extract_b_after_phasic_electro:
@@ -384,8 +420,12 @@ if __name__ == '__main__':
                         current_ext = ext_heat
                     elif prev_label == extract_b_after_tonic_electro:
                         current_label = base_line_label_tonic_electro  # e. g. -200
+                        tonic_split = True
+                        current_baseline_split_length = tonic_split_electro_length
                     elif prev_label == extract_b_after_tonic_heat:
                         current_label = base_line_label_tonic_heat  # e. g. 200
+                        tonic_split = True
+                        current_baseline_split_length = tonic_split_heat_length
                     else:
                         continue
 
@@ -393,7 +433,14 @@ if __name__ == '__main__':
                     slice_tup = extract_baseline_stimuli(subject_id, i, stimuli_start_indices,
                                                          processed_data_subject, current_label, extension=current_ext,
                                                          correction=current_correction, shift=current_shift)
-            collection_idx_slices.append(slice_tup)
+                    if tonic_split_sequence and tonic_split:
+                        slice_tup = split_tonic_sequence(slice_tup, current_baseline_split_length)
+            # add the splits if present
+            if type(slice_tup) == list:
+                collection_idx_slices = collection_idx_slices + slice_tup
+            # add the tuple itself if no split of the sequence occurred
+            else:
+                collection_idx_slices.append(slice_tup)
 
         results = Parallel(n_jobs=n_jobs,
                            backend=parallel_backend)(delayed(process_slice)(tup,
@@ -422,6 +469,10 @@ if __name__ == '__main__':
         # used for offset parameter in compute_start_indices
         'shift_phasic_heat': shift_phasic_heat,
         'shift_phasic_electro': shift_phasic_electro,
+
+        'tonic_split_sequence': tonic_split_sequence,  # flag to indicate that tonic sequences were split
+        'tonic_split_heat_length': tonic_split_heat_length,
+        'tonic_split_electro_length': tonic_split_electro_length,
         # used for offset window after applied stimulus
         'ext_heat': ext_heat,
         'ext_electro': ext_electro,
@@ -435,6 +486,9 @@ if __name__ == '__main__':
         'tonic_baseline_length_tolerance': tonic_baseline_length_tolerance,
         'tonic_length_tolerance': tonic_length_tolerance,
         'shift_tolerance': shift_tolerance,
+
+        'tonic_heat_stimuli_labels': tonic_heat_stimuli_labels,
+        'tonic_electro_stimuli_labels': tonic_electro_stimuli_labels,
 
         # labels for the different baselines
         'base_line_label_tonic_heat': base_line_label_tonic_heat,
