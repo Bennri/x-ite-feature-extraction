@@ -133,4 +133,5 @@ feature_extraction_functions_v2.py
 scatterplots.py
 *.csv
 *.json
+.idea/
 
