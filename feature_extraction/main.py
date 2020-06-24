@@ -289,9 +289,9 @@ if __name__ == '__main__':
     channel_names = {'corrugator': 0, 'zygomaticus': 1, 'trapezius': 2, 'scl': 3, 'ecg': 4}
 
     # for testing purpose only
-    subjects_file_list = list(filter(lambda x: '042' in x.name, usable_files))
+    # subjects_file_list = list(filter(lambda x: '042' in x.name, usable_files))
 
-    # subjects_file_list = usable_files
+    subjects_file_list = usable_files
     subjects_file_list.sort(key=lambda x: int(x.name.split('.')[0].split('S')[1]))
     default_order = ['corrugator', 'zygomaticus', 'trapezius', 'scl', 'ecg']
 
