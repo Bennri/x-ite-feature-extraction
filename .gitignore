@@ -127,3 +127,10 @@ dmypy.json
 
 # Pyre type checker
 .pyre/
+
+# additional
+feature_extraction_functions_v2.py
+scatterplots.py
+*.csv
+*.json
+
