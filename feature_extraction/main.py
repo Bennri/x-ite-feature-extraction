@@ -7,7 +7,7 @@ import functools
 from joblib import Parallel, delayed
 import pandas as pd
 import json
-
+from multiprocessing import Pool, Queue, Process
 import sys
 
 from sklearn.preprocessing import StandardScaler
@@ -180,7 +180,7 @@ def extract_pain_stimuli(subj_id, current_i, start_indices, data, current_label,
         # no correction here since all tonic stimuli are in the same length present
         data_slice = data[start_current_stimuli:start_next_stimuli, :]
 
-    print('Data slice has shape: {} with label {}'.format(data_slice.shape, slice_label))
+    # print('Data slice has shape: {} with label {}'.format(data_slice.shape, slice_label))
 
     return subj_id, start_indices[current_i], np.copy(data_slice), slice_label
 
@@ -201,7 +201,7 @@ def extract_baseline_stimuli(subj_id, current_i, start_indices, data, this_basel
         start_next_stimuli = start_current_stimuli + current_baseline_length + extension
 
     data_slice = data[start_current_stimuli:start_next_stimuli, :]
-    print('Data slice has shape: {} with label {}'.format(data_slice.shape, this_baseline_label))
+    # print('Data slice has shape: {} with label {}'.format(data_slice.shape, this_baseline_label))
     return subj_id, start_indices[current_i], np.copy(data_slice), this_baseline_label
 
 
@@ -242,6 +242,22 @@ def split_tonic_sequence(slice_tup, split_length):
         # collect splits
         slice_tup_list.append((subj_id, start_idx + (split_idx * split_length), phasic_slice, slice_label))
     return slice_tup_list
+
+
+def process_subject_queue(queue, result_queue, n_jobs, channel_features_dict, default_o, ch_names):
+    pool = Pool(processes=n_jobs)
+    process_slice_partial = functools.partial(process_slice, channel_features_dict=channel_features_dict,
+                                              default_o=default_o, ch_names=ch_names)
+    while True:
+        subject_slices = queue.get()
+        if subject_slices is not None:
+            extracted_features = pool.map(process_slice_partial, subject_slices)
+            result_queue.put(extracted_features)
+        else:
+            result_queue.put(None)
+            pool.close()
+            pool.join()
+            break
 
 
 # do not use subjects according to Werner et al. "Twofold-Multimodal Pain Recognition with the X-ITE Pain Database"
@@ -322,6 +338,15 @@ if __name__ == '__main__':
     # iterate over all files / subjects and accumulate the results in a list since the
     # number of samples is not known before (only number of subjects)
     accumulator_samples = []
+
+    # collect prepared subjects for parallel
+    prepared_subjects_queue = Queue()
+    result_queue = Queue()
+    queue_worker = Process(target=process_subject_queue, args=(prepared_subjects_queue, result_queue, n_jobs,
+                                                               channel_feature_extr_config_dict_time_domain,
+                                                               default_order, channel_names))
+    queue_worker.start()
+
     print("Start processing subjects: ")
     start = datetime.now()
     for k, subject_path in enumerate(subjects_file_list):
@@ -408,7 +433,7 @@ if __name__ == '__main__':
                     tonic_split = False
                     current_baseline_split_length = 0
                     prev_label = subject_labels_edited[stimuli_start_indices[i - 1]]
-                    print('Prev label baseline: {}'.format(prev_label))
+                    # print('Prev label baseline: {}'.format(prev_label))
                     if prev_label == extract_b_after_phasic_electro:
                         current_label = base_line_label_phasic_electro  # e. g. -100
                         # set electro specific shift which is used for pain stimuli as well
@@ -444,14 +469,33 @@ if __name__ == '__main__':
             else:
                 collection_idx_slices.append(slice_tup)
 
-        results = Parallel(n_jobs=n_jobs,
-                           backend=parallel_backend)(delayed(process_slice)(tup,
-                                                                            channel_feature_extr_config_dict_time_domain,
-                                                                            default_order, channel_names)
-                                                     for tup in
-                                                     collection_idx_slices)
+        prepared_subjects_queue.put(collection_idx_slices)
 
-        accumulator_samples = accumulator_samples + results
+        # preparation_end = datetime.now()
+        # print('Time for subject preparation: {}'.format(preparation_end - preparation_start))
+        # parallel_fe_start = datetime.now()
+        # results = Parallel(n_jobs=n_jobs,
+        #                    backend=parallel_backend)(delayed(process_slice)(tup,
+        #                                                                     channel_feature_extr_config_dict_time_domain,
+        #                                                                     default_order, channel_names)
+        #                                              for tup in
+        #                                              collection_idx_slices)
+
+        # accumulator_samples = accumulator_samples + results
+
+    prepared_subjects_queue.put(None)
+    while True:
+        results = result_queue.get()
+        if results is not None:
+            accumulator_samples = accumulator_samples + results
+        else:
+            break
+
+    result_queue.close()
+    prepared_subjects_queue.close()
+
+    queue_worker.join()
+    print('queue_worker finished with exit code {}'.format(queue_worker.exitcode))
 
     # store features in matrix
     # path_repaired_nans_json = os.path.join(path_to_store_dataset, dataset_file_name + '_repaired_rows_cols_nan.json')
