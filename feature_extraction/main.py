@@ -556,13 +556,13 @@ if __name__ == '__main__':
     df = pd.DataFrame(data_set_real, columns=cols)
 
     # subject specific standardization (z-score: zero mean with unit variance)
-    unique_ids = np.unique(df.iloc[:, 0].values)
-    mod_feature_vec = []
-    for s_id in unique_ids:
-        scaler = StandardScaler()
-        idx = np.where(df['subj_id'] == s_id)[0]
-        vals = df.iloc[idx, 1:-1].to_numpy()
-        tmp_res = scaler.fit_transform(vals)
-        df.iloc[idx, 1:-1] = tmp_res
+    # unique_ids = np.unique(df.iloc[:, 0].values)
+    # mod_feature_vec = []
+    # for s_id in unique_ids:
+    #     scaler = StandardScaler()
+    #     idx = np.where(df['subj_id'] == s_id)[0]
+    #     vals = df.iloc[idx, 1:-1].to_numpy()
+    #     tmp_res = scaler.fit_transform(vals)
+    #     df.iloc[idx, 1:-1] = tmp_res
 
     df.to_csv(path_data_set)
