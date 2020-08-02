@@ -37,6 +37,30 @@ def process_dataset_preprocessing(dataset, channel_filter_dict, default_channel_
     return dataset
 
 
+def process_slice_preprocessing(dataset, channel_filter_dict, default_channel_names=None):
+    """
+    Applies functions such as filtering on a channel of the given data slice matrix.
+    This function is needed since the slices are processed in parallel and each process has read only access on the copied
+    slice. Therefore, a new array is created.
+    :param dataset: A data slice with shape (sample, channel).
+    :param channel_filter_dict: A dictionary which holds for each channel name a list of preprocessing functions.
+    :param default_channel_names: The resolution from channel name to column.
+    :return: The modified / filtered data set.
+    """
+
+    pre_processed_slice = np.zeros(dataset.shape)
+    if default_channel_names is None:
+        default_channel_names = {'corrugator': 0, 'zygomaticus': 1, 'trapezius': 2, 'scl': 3, 'ecg': 4}
+    for channel_key in channel_filter_dict.keys():
+        for i, func in enumerate(channel_filter_dict[channel_key]):
+            pre_processed_slice[:, default_channel_names[channel_key]] = apply_on_channel(data=dataset,
+                                                                                          apply_to_channel=channel_key,
+                                                                                          applied_func=func,
+                                                                                          default_channel_names=default_channel_names).reshape(
+                -1, )
+    return dataset
+
+
 def compute_start_indices(stimuli_labels, shift=0):
     """
     Computes all indices at which a new label different to the one before occurs. That demonstrates when a new stimuli sequence starts.

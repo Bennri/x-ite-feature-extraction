@@ -30,7 +30,7 @@ from feature_extraction.feature_extraction_functions import signal_tga, signal_m
     signal_split_equal_part_var, signal_area_min_max_ratio, signal_p2pmv, mean_absolute_value_first_diff, \
     mean_absolute_value_second_diff
 from feature_extraction.helpers import process_dataset_preprocessing, compute_start_indices, \
-    process_dataset_extract_features, replace_or_remove_occurring_nans_in_data_set
+    process_dataset_extract_features, replace_or_remove_occurring_nans_in_data_set, process_slice_preprocessing
 from feature_extraction.preprocessing import butter_bandpass_partial, butter_bandpass_partial_ecg, \
     reset_bad_labels_for_editing, cut_start, editing_subject_data, repair_faulty_labels
 
@@ -207,9 +207,18 @@ def extract_baseline_stimuli(subj_id, current_i, start_indices, data, this_basel
 
 # wrapper function for multiprocessing
 def process_slice(seq_tuple,
+                  channel_preproc_conf_dict=None,
                   channel_features_dict=None,
                   default_o=None,
                   ch_names=None):
+    if channel_preproc_conf_dict is None:
+        channel_preproc_conf_dict = {
+            'corrugator': [butter_bandpass_partial],
+            'zygomaticus': [butter_bandpass_partial],
+            'trapezius': [butter_bandpass_partial],
+            'scl': [],
+            'ecg': [butter_bandpass_partial_ecg]
+        }
     # seq_tuple -> (subject_id, current_data, current_label)
     subj_id, glob_idx, c_data, c_label = seq_tuple
     print("Current data slice start idx: {}, size: {}, label: {}".format(glob_idx, c_data.shape, c_label))
@@ -221,7 +230,10 @@ def process_slice(seq_tuple,
         channel_features_dict = []
     if default_o is None:
         default_o = ['corrugator', 'zygomaticus', 'trapezius', 'scl', 'ecg']
-    current_features = process_dataset_extract_features(c_data,
+
+    # do preprocessing on a single slice
+    pro_processed_slice = process_slice_preprocessing(c_data, channel_preproc_conf_dict)
+    current_features = process_dataset_extract_features(pro_processed_slice,
                                                         channel_features_dict=channel_features_dict,
                                                         default_order=default_o,
                                                         default_channel_names=ch_names)
@@ -271,15 +283,15 @@ if __name__ == '__main__':
 
     # used for offset parameter in compute_start_indices
     # this does not only shift the starting point of a stimulus, but also the ending point
-    shift_phasic_heat = 2000
+    shift_phasic_heat = 3000
     shift_phasic_electro = 0
 
-    tonic_split_sequence = True
-    tonic_split_heat_length = 4500  # resulting in 15 phasic heat sequences of length 4 s
-    tonic_split_electro_length = 4000  # resulting in 12 phasic electric sequences of length 5 s
+    tonic_split_sequence = False
+    tonic_split_heat_length = 0  # resulting in 15 phasic heat sequences of length 4 s
+    tonic_split_electro_length = 0  # resulting in 12 phasic electric sequences of length 5 s
 
     # used for offset window after applied stimulus
-    ext_heat = 500
+    ext_heat = 0
     ext_electro = 0
 
     correction_phasic_heat_electro = 1000
@@ -357,7 +369,9 @@ if __name__ == '__main__':
                                                                           subject_labels_shaved,
                                                                           label_to_cut_off=-11)
 
-        processed_data_subject = process_dataset_preprocessing(subject_data_edited, channel_preproc_config_dict)
+        # do preprocessing on a single slice
+        # processed_data_subject = process_dataset_preprocessing(subject_data_edited, channel_preproc_config_dict)
+        processed_data_subject = subject_data_edited
 
         # do slicing by labels and feature extraction here - which is a shift
         stimuli_start_indices = compute_start_indices(subject_labels_edited, shift=0)
@@ -478,7 +492,7 @@ if __name__ == '__main__':
                 collection_idx_slices.append(slice_tup)
 
         results = Parallel(n_jobs=n_jobs,
-                           backend=parallel_backend)(delayed(process_slice)(tup,
+                           backend=parallel_backend)(delayed(process_slice)(tup, channel_preproc_config_dict,
                                                                             channel_feature_extr_config_dict_time_domain,
                                                                             default_order, channel_names)
                                                      for tup in
