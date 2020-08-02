@@ -178,7 +178,7 @@ def extract_pain_stimuli(subj_id, current_i, start_indices, data, current_label,
         start_next_stimuli = compute_end_idx_stimuli(current_i, start_indices, tonic_length, data.shape[0],
                                                      extension=extension, shift=shift)
         # no correction here since all tonic stimuli are in the same length present
-        data_slice = data[start_current_stimuli:start_next_stimuli, :]
+        data_slice = data[start_current_stimuli + correction:start_next_stimuli, :]
 
     print('Data slice has shape: {} with label {}'.format(data_slice.shape, slice_label))
 
@@ -234,13 +234,18 @@ def process_slice(seq_tuple,
 def split_tonic_sequence(slice_tup, split_length):
     subj_id, start_idx, data_slice, slice_label = slice_tup
     slice_tup_list = []
-
+    print('Original tonic slice length: {}'.format(data_slice.shape[0]))
     # number of splits
     s = int(data_slice.shape[0] / split_length)
     for split_idx in range(0, s):
+        # add split only of they have the necessary length
+        len_next_slice = (split_idx * split_length + split_length) - (split_idx * split_length)
+        #if len_next_slice >= split_length:
         phasic_slice = np.copy(data_slice[split_idx * split_length: split_idx * split_length + split_length, :])
+        print("Split slice size: {}".format(phasic_slice.shape[0]))
         # collect splits
         slice_tup_list.append((subj_id, start_idx + (split_idx * split_length), phasic_slice, slice_label))
+    print('Number of slices: {} with label: {}'.format(len(slice_tup_list), slice_label))
     return slice_tup_list
 
 
@@ -265,18 +270,21 @@ if __name__ == '__main__':
     parallel_backend = fe_config['parallel_backend']
 
     # used for offset parameter in compute_start_indices
+    # this does not only shift the starting point of a stimulus, but also the ending point
     shift_phasic_heat = 2000
     shift_phasic_electro = 0
 
     tonic_split_sequence = True
-    tonic_split_heat_length = 4000  # resulting in 15 phasic heat sequences of length 4 s
-    tonic_split_electro_length = 5000  # resulting in 12 phasic electric sequences of length 5 s
+    tonic_split_heat_length = 4500  # resulting in 15 phasic heat sequences of length 4 s
+    tonic_split_electro_length = 4000  # resulting in 12 phasic electric sequences of length 5 s
 
     # used for offset window after applied stimulus
     ext_heat = 500
     ext_electro = 0
 
-    correction_heat_electro = 1000
+    correction_phasic_heat_electro = 1000
+    remove_n_samples_from_start_heat = 0
+    remove_n_samples_from_start_electro = 0
 
     # tolerances for subject correction
     accepted_labels = [-6, -5, -4, -3, -2, -1, 0, 1, 2, 3, 4, 5, 6]
@@ -313,9 +321,9 @@ if __name__ == '__main__':
     channel_names = {'corrugator': 0, 'zygomaticus': 1, 'trapezius': 2, 'scl': 3, 'ecg': 4}
 
     # for testing purpose only
-    # subjects_file_list = list(filter(lambda x: '042' in x.name or '043' in x.name , usable_files))
+    subjects_file_list = list(filter(lambda x: '042' in x.name, usable_files))
 
-    subjects_file_list = usable_files
+    # subjects_file_list = usable_files
     subjects_file_list.sort(key=lambda x: int(x.name.split('.')[0].split('S')[1]))
     default_order = ['corrugator', 'zygomaticus', 'trapezius', 'scl', 'ecg']
 
@@ -375,26 +383,42 @@ if __name__ == '__main__':
                                                      current_label, extension=ext_electro,
                                                      tonic_length=tonic_length_tolerance,
                                                      phasic_length=phasic_length_tolerance, phasic=True,
-                                                     heat_phasic=False, correction=correction_heat_electro,
+                                                     heat_phasic=False, correction=correction_phasic_heat_electro,
                                                      shift=shift_phasic_electro)
             # tonic stimuli
             elif current_label in tonic_stimuli_labels:
-                slice_tup = extract_pain_stimuli(subject_id, i, stimuli_start_indices, processed_data_subject,
-                                                 current_label, extension=0, tonic_length=tonic_length_tolerance,
-                                                 phasic_length=phasic_length_tolerance, phasic=False, heat_phasic=False,
-                                                 correction=0, shift=0)
+
                 if tonic_split_sequence:
                     # call function to split data
-                    if slice_tup[3] in tonic_electro_stimuli_labels:
+                    if current_label in tonic_electro_stimuli_labels:
+                        slice_tup = extract_pain_stimuli(subject_id, i, stimuli_start_indices, processed_data_subject,
+                                                         current_label, extension=0,
+                                                         tonic_length=tonic_length_tolerance,
+                                                         phasic_length=phasic_length_tolerance, phasic=False,
+                                                         heat_phasic=False,
+                                                         correction=remove_n_samples_from_start_electro, shift=0)
                         slice_tup = split_tonic_sequence(slice_tup, tonic_split_electro_length)
-                    elif slice_tup[3] in tonic_heat_stimuli_labels:
+
+                    elif current_label in tonic_heat_stimuli_labels:
+                        slice_tup = extract_pain_stimuli(subject_id, i, stimuli_start_indices, processed_data_subject,
+                                                         current_label, extension=0,
+                                                         tonic_length=tonic_length_tolerance,
+                                                         phasic_length=phasic_length_tolerance, phasic=False,
+                                                         heat_phasic=False,
+                                                         correction=remove_n_samples_from_start_heat, shift=0)
                         slice_tup = split_tonic_sequence(slice_tup, tonic_split_heat_length)
                     else:
                         raise SequenceTupleException('Label of sequence unknown, split not possible. '
                                                      'Label {} is not part of tonic electro (labels: {}) nor '
                                                      'tonic heat (labels: {}) '
-                                                     'stimuli.'.format(slice_tup[3], tonic_electro_stimuli_labels,
+                                                     'stimuli.'.format(current_label, tonic_electro_stimuli_labels,
                                                                        tonic_heat_stimuli_labels))
+                else:
+
+                    slice_tup = extract_pain_stimuli(subject_id, i, stimuli_start_indices, processed_data_subject,
+                                                     current_label, extension=0, tonic_length=tonic_length_tolerance,
+                                                     phasic_length=phasic_length_tolerance, phasic=False,
+                                                     heat_phasic=False, correction=0, shift=0)
 
             # only baseline is left
             else:
@@ -414,7 +438,7 @@ if __name__ == '__main__':
                         # set electro specific shift which is used for pain stimuli as well
                         current_shift = shift_phasic_electro
                         current_ext = ext_electro
-                        current_correction = correction_heat_electro
+                        current_correction = correction_phasic_heat_electro
                     elif prev_label == extract_b_after_phasic_heat:
                         current_label = base_line_label_phasic_heat  # e. g. 100
                         # set heat specific shift which is used for pain stimuli as well
@@ -432,6 +456,15 @@ if __name__ == '__main__':
                         continue
 
                     # call function to extract baseline
+                    if tonic_split_sequence and tonic_split:
+                        if current_label in tonic_electro_stimuli_labels:
+                            current_correction = remove_n_samples_from_start_electro
+                        elif current_label in tonic_heat_stimuli_labels:
+                            current_correction = remove_n_samples_from_start_heat
+                        elif prev_label == extract_b_after_tonic_heat:
+                            current_correction = remove_n_samples_from_start_heat
+                        elif prev_label == extract_b_after_tonic_electro:
+                            current_correction = remove_n_samples_from_start_electro
                     slice_tup = extract_baseline_stimuli(subject_id, i, stimuli_start_indices,
                                                          processed_data_subject, current_label, extension=current_ext,
                                                          correction=current_correction, shift=current_shift)
@@ -479,7 +512,9 @@ if __name__ == '__main__':
         'ext_heat': ext_heat,
         'ext_electro': ext_electro,
 
-        'correction_heat_electro': correction_heat_electro,
+        'correction_phasic_heat_electro': correction_phasic_heat_electro,
+        'remove_n_samples_from_start_heat': remove_n_samples_from_start_heat,
+        'remove_n_samples_from_start_electro': remove_n_samples_from_start_electro,
 
         # tolerances for subject correction
         'accepted_labels': accepted_labels,
