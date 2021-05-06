@@ -17,7 +17,7 @@ Create a file named `fe_config.json` in the root directory of this repository, c
 }
 ```
 
-If you use this work or find it useful, please be so kind and cite this work with:
+If you use this code or find it helpful, please be so kind and use this reference:
 ```
 @inproceedings{DBLP:conf/annpr/RickenSBWS20,
   author    = {Tobias Ricken and
