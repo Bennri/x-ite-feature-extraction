@@ -240,3 +240,6 @@ def repair_faulty_labels(data, stimuli,
     modified_stimuli = np.delete(stimuli, indices_marked_for_repair)
 
     return modified_data, modified_stimuli
+
+def identity_helper(data):
+    return data

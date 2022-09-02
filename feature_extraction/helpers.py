@@ -58,7 +58,7 @@ def process_slice_preprocessing(dataset, channel_filter_dict, default_channel_na
                                                                                           applied_func=func,
                                                                                           default_channel_names=default_channel_names).reshape(
                 -1, )
-    return dataset
+    return pre_processed_slice
 
 
 def compute_start_indices(stimuli_labels, shift=0):

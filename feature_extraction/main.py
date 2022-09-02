@@ -32,14 +32,14 @@ from feature_extraction.feature_extraction_functions import signal_tga, signal_m
 from feature_extraction.helpers import process_dataset_preprocessing, compute_start_indices, \
     process_dataset_extract_features, replace_or_remove_occurring_nans_in_data_set, process_slice_preprocessing
 from feature_extraction.preprocessing import butter_bandpass_partial, butter_bandpass_partial_ecg, \
-    reset_bad_labels_for_editing, cut_start, editing_subject_data, repair_faulty_labels
+    reset_bad_labels_for_editing, cut_start, editing_subject_data, repair_faulty_labels, identity_helper
 
 
 channel_preproc_config_dict = {
     'corrugator': [butter_bandpass_partial],
     'zygomaticus': [butter_bandpass_partial],
     'trapezius': [butter_bandpass_partial],
-    'scl': [],
+    'scl': [identity_helper],
     'ecg': [butter_bandpass_partial_ecg]
 }
 
@@ -333,11 +333,12 @@ if __name__ == '__main__':
     channel_names = {'corrugator': 0, 'zygomaticus': 1, 'trapezius': 2, 'scl': 3, 'ecg': 4}
 
     # for testing purpose only
-    subjects_file_list = list(filter(lambda x: '042' in x.name, usable_files))
+    # subjects_file_list = list(filter(lambda x: '042' in x.name, usable_files))
 
-    # subjects_file_list = usable_files
+    subjects_file_list = usable_files
     subjects_file_list.sort(key=lambda x: int(x.name.split('.')[0].split('S')[1]))
     default_order = ['corrugator', 'zygomaticus', 'trapezius', 'scl', 'ecg']
+
 
     # iterate over all files / subjects and accumulate the results in a list since the
     # number of samples is not known before (only number of subjects)
